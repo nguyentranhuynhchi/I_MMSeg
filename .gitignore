@@ -2,8 +2,10 @@ __pycache__/
 *.py[cod]
 *.pth
 *.pt
+!text_features/*.pth
 weights/
 predictions/
 test_log/
 tmp/
 .ipynb_checkpoints/
+
