@@ -244,6 +244,50 @@ class DecoderCup(nn.Module):
             x = decoder_block(x, skip=skip)
         return x
 
+# ----------------- Khối Attention Gate (Lọc Kênh & Lọc Không gian) -----------------
+class ChannelAttention(nn.Module):
+    def __init__(self, in_channels, ratio=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.mlp = nn.Sequential(
+            nn.Linear(in_channels, in_channels // ratio, bias=False),
+            nn.ReLU(),
+            nn.Linear(in_channels // ratio, in_channels, bias=False)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        avg_out = self.mlp(self.avg_pool(x).view(b, c))
+        max_out = self.mlp(self.max_pool(x).view(b, c))
+        out = self.sigmoid(avg_out + max_out).view(b, c, 1, 1)
+        return x * out
+
+class SpatialAttention(nn.Module):
+    def __init__(self):
+        super(SpatialAttention, self).__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size=7, padding=3, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        out = self.sigmoid(self.conv(torch.cat([avg_out, max_out], dim=1)))
+        return x * out
+
+class CBAM(nn.Module):
+    def __init__(self, in_channels, ratio=16):
+        super(CBAM, self).__init__()
+        self.channel_att = ChannelAttention(in_channels, ratio)
+        self.spatial_att = SpatialAttention()
+
+    def forward(self, x):
+        x = self.channel_att(x)  # Bước 1: Lọc Kênh (Tăng sáng Sẹo/Phù)
+        x = self.spatial_att(x)  # Bước 2: Lọc Vị trí (Xóa nhiễu ngoài phổi)
+        return x
+
+# ----------------- Khối Hợp Nhất Cải Tiến (Fusion + Attention Gate) -----------------
 class Fusion_Embed(nn.Module):
     def __init__(self, embed_dim, bias=False):
         super(Fusion_Embed, self).__init__()
@@ -251,13 +295,14 @@ class Fusion_Embed(nn.Module):
         self.fusion_proj = nn.Conv2d(embed_dim * 3, embed_dim, kernel_size=1, stride=1, bias=bias)
         self.norm = nn.BatchNorm2d(embed_dim)
         self.activation = nn.ReLU(inplace=True)
+        self.attention_gate = CBAM(embed_dim)  # <--- [MỚI] Khởi tạo Bộ lọc Chú ý
 
     def forward(self, x_A, x_B, x_C):
         x = torch.concat([x_A, x_B, x_C], dim=1).contiguous()
         x = self.fusion_proj(x)
         x = self.norm(x)
         x = self.activation(x)
-        # x = x.flatten(2)
+        x = self.attention_gate(x)  # <--- [MỚI] Lọc sạch đặc trưng trước khi sang Decoder
         return x
 
 class FeatureWiseAffine(nn.Module):
