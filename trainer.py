@@ -76,7 +76,7 @@ def trainer_Myops(args, model, snapshot_path):
     if args.n_gpu > 1:
         model = nn.DataParallel(model)
     model.train()
-    con_loss = ContrastiveLoss()
+    # con_loss = ContrastiveLoss()
     ce_loss = CrossEntropyLoss()
     dice_loss = DiceLoss(num_classes)
     optimizer = optim.AdamW(model.parameters(), lr=base_lr, weight_decay=0.0001)
