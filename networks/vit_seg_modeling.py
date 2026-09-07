@@ -244,22 +244,48 @@ class DecoderCup(nn.Module):
             x = decoder_block(x, skip=skip)
         return x
 
+# class Fusion_Embed(nn.Module):
+#     def __init__(self, embed_dim, bias=False):
+#         super(Fusion_Embed, self).__init__()
+
+#         self.fusion_proj = nn.Conv2d(embed_dim * 3, embed_dim, kernel_size=1, stride=1, bias=bias)
+#         self.norm = nn.BatchNorm2d(embed_dim)
+#         self.activation = nn.ReLU(inplace=True)
+
+#     def forward(self, x_A, x_B, x_C):
+#         x = torch.concat([x_A, x_B, x_C], dim=1).contiguous()
+#         x = self.fusion_proj(x)
+#         x = self.norm(x)
+#         x = self.activation(x)
+#         # x = x.flatten(2)
+#         return x
+# ----------------- Khối Hợp Nhất Cải Tiến 2 (Modality-Specific Attention Gates) -----------------
 class Fusion_Embed(nn.Module):
     def __init__(self, embed_dim, bias=False):
         super(Fusion_Embed, self).__init__()
+
+        # 1. Khởi tạo 3 Attention Gates riêng biệt cho 3 chuỗi xung trước khi gộp
+        self.gate_bSSFP = CBAM(embed_dim)  # Tinh lọc đặc trưng Cơ tim (bSSFP)
+        self.gate_LGE   = CBAM(embed_dim)  # Tinh lọc đặc trưng Sẹo nhồi máu (LGE)
+        self.gate_T2w   = CBAM(embed_dim)  # Tinh lọc đặc trưng Phù nề (T2w)
 
         self.fusion_proj = nn.Conv2d(embed_dim * 3, embed_dim, kernel_size=1, stride=1, bias=bias)
         self.norm = nn.BatchNorm2d(embed_dim)
         self.activation = nn.ReLU(inplace=True)
 
     def forward(self, x_A, x_B, x_C):
-        x = torch.concat([x_A, x_B, x_C], dim=1).contiguous()
+        # 2. Tinh lọc đặc trưng độc lập cho từng chuỗi xung trước khi gộp (Concat)
+        x_A_feat = self.gate_bSSFP(x_A)  # Nhánh bSSFP
+        x_B_feat = self.gate_LGE(x_B)    # Nhánh LGE
+        x_C_feat = self.gate_T2w(x_C)    # Nhánh T2w
+
+        # 3. Gộp 3 luồng đặc trưng đã được lọc sạch lại và đưa sang Decoder
+        x = torch.concat([x_A_feat, x_B_feat, x_C_feat], dim=1).contiguous()
         x = self.fusion_proj(x)
         x = self.norm(x)
         x = self.activation(x)
-        # x = x.flatten(2)
         return x
-
+        
 class FeatureWiseAffine(nn.Module):
     def __init__(self, in_channels, out_channels, use_affine_level=True):
         super(FeatureWiseAffine, self).__init__()
@@ -756,16 +782,23 @@ class VisionTransformer(nn.Module):
             psir_embedding_list = None
             t2w_embedding_list = None
 
+        # if self.training:
+        #     cine_pre = self.forward_prediction_head1(cine_features, class_features_cine, dec_cine_out)
+        #     psir_pre = self.forward_prediction_head2(psir_features, class_features_psir, dec_psir_out)
+        #     t2w_pre = self.forward_prediction_head3(t2w_features, class_features_t2w, dec_t2w_out)
+        #     return out_seg, (cine_pre, psir_pre, t2w_pre), \
+        #         (cine_embedding_list, psir_embedding_list, t2w_embedding_list),\
+        #             text_embedding_list
+        # else:
+        #     return out_seg
+        
         if self.training:
-            cine_pre = self.forward_prediction_head1(cine_features, class_features_cine, dec_cine_out)
-            psir_pre = self.forward_prediction_head2(psir_features, class_features_psir, dec_psir_out)
-            t2w_pre = self.forward_prediction_head3(t2w_features, class_features_t2w, dec_t2w_out)
-            return out_seg, (cine_pre, psir_pre, t2w_pre), \
-                (cine_embedding_list, psir_embedding_list, t2w_embedding_list),\
-                    text_embedding_list
+            cine_pre = self.forward_prediction_head1(cine_features, None, dec_cine_out)
+            psir_pre = self.forward_prediction_head2(psir_features, None, dec_psir_out)
+            t2w_pre = self.forward_prediction_head3(t2w_features, None, dec_t2w_out)
+            return out_seg, (cine_pre, psir_pre, t2w_pre)
         else:
             return out_seg
-    
 
     def load_from(self, weights):
         with torch.no_grad():

@@ -14,7 +14,7 @@ from torch.nn.modules.loss import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from utils import DiceLoss, SoftmaxWeightedLoss
-from utils import ContrastiveLoss
+# from utils import ContrastiveLoss
 from torchvision import transforms
 
 def trim_memory():
@@ -95,23 +95,27 @@ def trainer_Myops(args, model, snapshot_path):
             label_batch = sampled_batch['label'].cuda(non_blocking=pin_memory)
             del sampled_batch
 
-            out_pre, dec_seg, features_embedding_list, text_embedding_list= model(image_batch, image1_batch, image2_batch, do_contrast)
-            ignores = ([2,3],[0],[0])
-            loss_all = 0
-            if do_contrast:
-                for i in range(len(features_embedding_list)):
-                    feature_list = features_embedding_list[i]
-                    ignore = ignores[i]
-                    loss_con = con_loss(feature_list,
-                                        label_batch,
-                                        text_embedding_list,
-                                        ignore,
-                                        sample_num = args.contrast_sample_num,
-                                        )
-                    loss_all += loss_con
-                loss_all = loss_all /len(features_embedding_list)
-            else:
-                loss_all = 0
+            # out_pre, dec_seg, features_embedding_list, text_embedding_list= model(image_batch, image1_batch, image2_batch, do_contrast)
+            # ignores = ([2,3],[0],[0])
+            # loss_all = 0
+            # if do_contrast:
+            #     for i in range(len(features_embedding_list)):
+            #         feature_list = features_embedding_list[i]
+            #         ignore = ignores[i]
+            #         loss_con = con_loss(feature_list,
+            #                             label_batch,
+            #                             text_embedding_list,
+            #                             ignore,
+            #                             sample_num = args.contrast_sample_num,
+            #                             )
+            #         loss_all += loss_con
+            #     loss_all = loss_all /len(features_embedding_list)
+            # else:
+            #     loss_all = 0
+            # Gọi mô hình thuần thị giác (Pure Vision)
+            out_pre, dec_seg = model(image_batch, image1_batch, image2_batch)
+            loss_all = 0  # Không cần tính Contrastive Loss
+
             out_cross_loss = ce_loss(out_pre, label_batch)
             out_dice_loss = dice_loss(out_pre, label_batch, softmax=True)
             out_loss = 0.2* out_cross_loss + 0.8* out_dice_loss
