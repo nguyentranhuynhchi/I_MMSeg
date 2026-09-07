@@ -285,7 +285,7 @@ class Fusion_Embed(nn.Module):
         x = self.norm(x)
         x = self.activation(x)
         return x
-        
+
 class FeatureWiseAffine(nn.Module):
     def __init__(self, in_channels, out_channels, use_affine_level=True):
         super(FeatureWiseAffine, self).__init__()
@@ -585,10 +585,12 @@ class VisionTransformer(nn.Module):
         self.zero_head = zero_head #The zero_head parameter is typically used to control the initialisation method for the model's classification head.
         self.classifier = config.classifier  #Define the classifier
         self.patches = config.patches.size
-        class_embedding = torch.load(f'{PROJECT_ROOT}/text_features/embedding_class_information.pth', map_location='cpu').float()
-        modal_embedding = torch.load(f'{PROJECT_ROOT}/text_features/embedding_MRI_information.pth', map_location='cpu').float()
-        self.register_buffer('class_embedding', class_embedding)
-        self.register_buffer('modal_embedding', modal_embedding)
+        # class_embedding = torch.load(f'{PROJECT_ROOT}/text_features/embedding_class_information.pth', map_location='cpu').float()
+        # modal_embedding = torch.load(f'{PROJECT_ROOT}/text_features/embedding_MRI_information.pth', map_location='cpu').float()
+        # self.register_buffer('class_embedding', class_embedding)
+        # self.register_buffer('modal_embedding', modal_embedding)
+        self.class_embedding = None
+        self.modal_embedding = None
         self.transformer1 = Transformer(config, img_size, vis)
         self.transformer2 = Transformer(config, img_size, vis)
         self.transformer3 = Transformer(config, img_size, vis)
@@ -692,11 +694,12 @@ class VisionTransformer(nn.Module):
         self.config = config
 
     def forward(self, x, x1, x2, do_contrast=False):
-        modal_embedding = self.modal_embedding.to(x.device)
-        modal_features = self.modal_text_to_vision(modal_embedding)
-        modal_features_2 = self.modal_text_to_weight(modal_embedding)
-        class_embedding = self.class_embedding.to(x.device)
-        class_features = self.text_to_vision(class_embedding)
+        # modal_embedding = self.modal_embedding.to(x.device)
+        # modal_features = self.modal_text_to_vision(modal_embedding)
+        # modal_features_2 = self.modal_text_to_weight(modal_embedding)
+        # class_embedding = self.class_embedding.to(x.device)
+        # class_features = self.text_to_vision(class_embedding)
+        class_features = None
         if x.size()[1] == 1:
             cine = x.repeat(1,3,1,1)
             psir = x1.repeat(1,3,1,1)
@@ -745,18 +748,21 @@ class VisionTransformer(nn.Module):
         # The resulting feature dimensions are (24, 16, 128, 128).
         
         # Modulating class_features across modalities:
-        cine_cbam = torch.mean(self.CBAMFeatureReducer_cine(cine_f),dim=0)
-        psir_cbam = torch.mean(self.CBAMFeatureReducer_psir(psir_f),dim=0)
-        t2w_cbam = torch.mean(self.CBAMFeatureReducer_t2w(t2w_f),dim=0)
-        modal_dec_cine = torch.cat([modal_features_2[0], cine_cbam],dim=0)
-        modal_dec_psir = torch.cat([modal_features_2[1], psir_cbam],dim=0)
-        modal_dec_t2w = torch.cat([modal_features_2[2], t2w_cbam],dim=0) 
-        cine_text = self.class_MLP_dec_cine(modal_dec_cine)
-        psir_text = self.class_MLP_dec_psir(modal_dec_psir)
-        t2w_text = self.class_MLP_dec_t2w(modal_dec_t2w)
-        class_features_cine = self.Class_Feature_Modulation_cine(class_features, cine_text)
-        class_features_psir = self.Class_Feature_Modulation_psir(class_features, psir_text)
-        class_features_t2w = self.Class_Feature_Modulation_t2w(class_features, t2w_text)
+        # cine_cbam = torch.mean(self.CBAMFeatureReducer_cine(cine_f),dim=0)
+        # psir_cbam = torch.mean(self.CBAMFeatureReducer_psir(psir_f),dim=0)
+        # t2w_cbam = torch.mean(self.CBAMFeatureReducer_t2w(t2w_f),dim=0)
+        # modal_dec_cine = torch.cat([modal_features_2[0], cine_cbam],dim=0)
+        # modal_dec_psir = torch.cat([modal_features_2[1], psir_cbam],dim=0)
+        # modal_dec_t2w = torch.cat([modal_features_2[2], t2w_cbam],dim=0) 
+        # cine_text = self.class_MLP_dec_cine(modal_dec_cine)
+        # psir_text = self.class_MLP_dec_psir(modal_dec_psir)
+        # t2w_text = self.class_MLP_dec_t2w(modal_dec_t2w)
+        # class_features_cine = self.Class_Feature_Modulation_cine(class_features, cine_text)
+        # class_features_psir = self.Class_Feature_Modulation_psir(class_features, psir_text)
+        # class_features_t2w = self.Class_Feature_Modulation_t2w(class_features, t2w_text)
+        class_features_cine = None
+        class_features_psir = None
+        class_features_t2w = None
 
         #Two feature fusion stages: 1. Encoder-stage res feature fusion: resulting in img_features; 2. Fusion of outputs from three encoders: fusion_features.
         img_features_fusion = []
@@ -765,8 +771,9 @@ class VisionTransformer(nn.Module):
 
         #Seg head section
         out = self.dec_output_fusion(dec_cine_out, dec_psir_out, dec_t2w_out)
-        out_seg = self.forward_prediction_head(img_features_fusion, class_features, out)
-
+        # out_seg = self.forward_prediction_head(img_features_fusion, class_features, out)
+        out_seg = self.forward_prediction_head(img_features_fusion, None, out)
+        
         if do_contrast:
             text_embedding_list = [self.text_to_64(class_embedding),
                                    self.text_to_128(class_embedding),
